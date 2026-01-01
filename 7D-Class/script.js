@@ -4,6 +4,7 @@ let isGuestMode = false;
 let currentAlbum = null;
 let currentPhotoIndex = 0;
 let isDarkMode = false;
+let autoLoginProcessed = false;
 
 let hamburger, sidebar, pages, loginBtn, guestLoginBtn, searchInput;
 let modalOverlay, modalClose, photoModal, photoModalClose;
@@ -64,7 +65,7 @@ function initializeApp() {
     themeToggle = document.getElementById('theme-toggle');
     
     if (hamburger) hamburger.addEventListener('click', toggleSidebar);
-    if (loginBtn) loginBtn.addEventListener('click', login);
+    if (loginBtn) loginBtn.addEventListener('click', handleLogin);
     if (guestLoginBtn) guestLoginBtn.addEventListener('click', enterGuestMode);
     if (modalClose) modalClose.addEventListener('click', closeModal);
     if (searchInput) searchInput.addEventListener('input', filterAnggota);
@@ -117,7 +118,7 @@ function initializeApp() {
     if (themeToggle) themeToggle.style.display = 'none';
     
     loadDarkModePreference();
-    checkSavedLogin();
+    checkAutoLogin();
     
     if (window.anggotaData) renderAnggotaKelas();
     if (typeof renderOrganisasiKelas === 'function') renderOrganisasiKelas();
@@ -144,8 +145,11 @@ function saveLoginData(username, remember) {
     }
 }
 
-function checkSavedLogin() {
+function checkAutoLogin() {
+    if (autoLoginProcessed) return;
+    
     const savedLogin = localStorage.getItem('class7d_login');
+    let username = null;
     
     if (savedLogin) {
         try {
@@ -153,10 +157,10 @@ function checkSavedLogin() {
             const now = Date.now();
             
             if (now - loginData.timestamp < loginData.expiry) {
-                document.getElementById('username').value = loginData.username;
-                if (rememberMeCheckbox) rememberMeCheckbox.checked = true;
-                autoLogin(loginData.username);
-                return true;
+                username = loginData.username;
+                if (rememberMeCheckbox) {
+                    rememberMeCheckbox.checked = true;
+                }
             } else {
                 localStorage.removeItem('class7d_login');
             }
@@ -165,33 +169,41 @@ function checkSavedLogin() {
         }
     }
     
-    const sessionLogin = sessionStorage.getItem('class7d_login');
-    if (sessionLogin) {
-        document.getElementById('username').value = sessionLogin;
-        autoLogin(sessionLogin);
-        return true;
+    if (!username) {
+        username = sessionStorage.getItem('class7d_login');
     }
     
-    return false;
+    if (username) {
+        autoLoginProcessed = true;
+        performAutoLogin(username);
+    }
 }
 
-function autoLogin(username) {
-    const usernameInput = document.getElementById('username');
-    const passwordInput = document.getElementById('password');
+function performAutoLogin(username) {
+    const user = users.find(u => u.username.toLowerCase() === username.toLowerCase());
     
-    if (usernameInput && passwordInput) {
-        usernameInput.value = username;
-        passwordInput.value = username.toLowerCase() + "123";
+    if (user) {
+        currentUser = {
+            username: user.username,
+            fullname: user.fullname
+        };
+        isLoggedIn = true;
+        isGuestMode = false;
+        
+        showPage('anggota-kelas');
         
         setTimeout(() => {
-            login();
+            showNotification(`Selamat datang kembali, ${user.fullname}!`);
         }, 100);
+        
+        if (window.anggotaData) renderAnggotaKelas();
     }
 }
 
 function clearLoginData() {
     localStorage.removeItem('class7d_login');
     sessionStorage.removeItem('class7d_login');
+    autoLoginProcessed = false;
 }
 
 function toggleSidebar() {
@@ -232,7 +244,7 @@ function showPage(pageId) {
     }
 }
 
-function login() {
+function handleLogin() {
     const usernameInput = document.getElementById('username');
     const passwordInput = document.getElementById('password');
     const rememberMe = rememberMeCheckbox ? rememberMeCheckbox.checked : false;
@@ -250,14 +262,10 @@ function login() {
         return;
     }
     
-    let user = users.find(u => 
-        u.username.toLowerCase() === username.toLowerCase()
-    );
+    let user = users.find(u => u.username.toLowerCase() === username.toLowerCase());
     
     if (!user) {
-        user = users.find(u => 
-            u.fullname.toLowerCase().includes(username.toLowerCase())
-        );
+        user = users.find(u => u.fullname.toLowerCase().includes(username.toLowerCase()));
     }
     
     if (user) {
@@ -266,11 +274,11 @@ function login() {
         if (password === expectedPassword) {
             currentUser = {
                 username: user.username,
-                fullname: user.fullname,
-                password: expectedPassword
+                fullname: user.fullname
             };
             isLoggedIn = true;
             isGuestMode = false;
+            autoLoginProcessed = true;
             
             saveLoginData(user.username, rememberMe);
             
@@ -295,6 +303,7 @@ function enterGuestMode() {
     isGuestMode = true;
     isLoggedIn = false;
     currentUser = null;
+    autoLoginProcessed = true;
     
     clearLoginData();
     
@@ -521,18 +530,18 @@ function loadDarkModePreference() {
     if (savedDarkMode === 'true') {
         isDarkMode = true;
         document.body.classList.add('dark-mode');
-        themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+        if (themeToggle) themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
     } else {
         isDarkMode = false;
         document.body.classList.remove('dark-mode');
-        themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
+        if (themeToggle) themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
     }
     
     const prefersDarkScheme = window.matchMedia('(prefers-color-scheme: dark)');
     if (savedDarkMode === null && prefersDarkScheme.matches) {
         isDarkMode = true;
         document.body.classList.add('dark-mode');
-        themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+        if (themeToggle) themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
         localStorage.setItem('class7d_darkmode', 'true');
     }
 }
@@ -553,8 +562,8 @@ document.addEventListener('keydown', function(e) {
     }
     
     const passwordInput = document.getElementById('password');
-    if (passwordInput && e.key === 'Enter') {
-        login();
+    if (passwordInput && e.key === 'Enter' && document.activeElement === passwordInput) {
+        handleLogin();
     }
     
     if (e.key === 'd' && e.ctrlKey) {
